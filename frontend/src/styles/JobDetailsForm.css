@@ -1,0 +1,81 @@
+.job-details-form {
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  
+  .form-group {
+    margin-bottom: 1.5rem;
+  }
+  
+  label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+    text-align: left;
+  }
+  
+  input, textarea {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    transition: border-color 0.2s;
+  }
+  
+  input:focus, textarea:focus {
+    border-color: #3498db;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.25);
+  }
+  
+  .form-hint {
+    font-size: 0.85rem;
+    color: #6c757d;
+    margin-top: 0.5rem;
+    text-align: left;
+  }
+  
+  .form-actions {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 2rem;
+  }
+  
+  .skip-button {
+    background-color: transparent;
+    border: 1px solid #ced4da;
+    color: #495057;
+    padding: 0.75rem 1.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .skip-button:hover {
+    background-color: #f8f9fa;
+  }
+  
+  .submit-button {
+    background-color: #3498db;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  
+  .submit-button:hover {
+    background-color: #2980b9;
+  }
+  
+  @media (max-width: 576px) {
+    .form-actions {
+      flex-direction: column;
+      gap: 1rem;
+    }
+    
+    .submit-button, .skip-button {
+      width: 100%;
+    }
+  }

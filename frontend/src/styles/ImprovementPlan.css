@@ -1,0 +1,126 @@
+.improvement-plan {
+    padding-bottom: 2rem;
+  }
+  
+  .plan-section {
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+  }
+  
+  .plan-section h3 {
+    margin-bottom: 1rem;
+    color: #2c3e50;
+    font-size: 1.25rem;
+  }
+  
+  .section-intro {
+    margin-bottom: 1.5rem;
+    color: #495057;
+  }
+  
+  .action-list {
+    list-style: none;
+    padding: 0;
+  }
+  
+  .action-item {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 1.25rem;
+  }
+  
+  .action-number {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background-color: #3498db;
+    color: white;
+    font-weight: 700;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-right: 1rem;
+    flex-shrink: 0;
+  }
+  
+  .action-text {
+    flex: 1;
+    padding-top: 0.25rem;
+    color: #495057;
+    line-height: 1.5;
+  }
+  
+  .priority .action-number {
+    background-color: #e74c3c;
+  }
+  
+  .secondary .action-number {
+    background-color: #f39c12;
+  }
+  
+  .section-plans {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+  }
+  
+  .section-plan {
+    background-color: white;
+    border-radius: 6px;
+    padding: 1.25rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  
+  .section-plan h4 {
+    margin-bottom: 1rem;
+    color: #3498db;
+    font-size: 1.1rem;
+  }
+  
+  .section-plan ul {
+    list-style-position: inside;
+    padding-left: 0;
+  }
+  
+  .section-plan li {
+    margin-bottom: 0.75rem;
+    color: #495057;
+  }
+  
+  .checklist {
+    margin-top: 1rem;
+  }
+  
+  .checklist-item {
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+  }
+  
+  .checklist-item input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    margin-right: 1rem;
+    cursor: pointer;
+  }
+  
+  .checklist-item label {
+    cursor: pointer;
+    flex: 1;
+  }
+  
+  .improvement-plan.empty {
+    text-align: center;
+    padding: 3rem 1rem;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    color: #6c757d;
+  }
+  
+  @media (max-width: 768px) {
+    .section-plans {
+      grid-template-columns: 1fr;
+    }
+  }

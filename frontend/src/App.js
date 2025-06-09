@@ -1,450 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-import uvicorn
-import tempfile
-import os
-import uuid
-import json
-import re
-import fitz  # PyMuPDF
-import docx2txt
-import mimetypes
-import asyncio
-import traceback
-from concurrent.futures import ThreadPoolExecutor
-from google.generativeai import GenerativeModel
-import google.generativeai as genai
-from PIL import Image
-from io import BytesIO
-from resume_analyzer import ResumeAnalyzer
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-
-# Configure Google AI
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "AIzaSyCY9tnrZXjEWJMlU39Y6Znd3eMnFQLBbI8")  # Use env var as default
-genai.configure(api_key=GOOGLE_API_KEY)
-
-# Initialize Gemini Vision model
-vision_model = genai.GenerativeModel("gemini-2.0-flash")
-
-# Initialize FastAPI
-app = FastAPI(title="Resume Analyzer API")
-
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # For production, specify your frontend domain
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Initialize resume analyzer
-analyzer = ResumeAnalyzer()
-
-# In-memory storage for analysis results
-analysis_results = {}
-
-# Resume parsing functions
-def parse_docx(file_path):
-    return docx2txt.process(file_path)
-
-def parse_pdf_text(file_path):
-    """Enhanced PDF text extraction that captures more content"""
-    # First try regular text extraction
-    text = ""
-    with fitz.open(file_path) as doc:
-        # Extract text with layout preservation
-        for page in doc:
-            # Use a higher textpage mode to better preserve layout
-            text += page.get_text("text")
-        
-        # If text seems incomplete (too short), try alternative extraction methods
-        if len(text.strip().split()) < 100:  # Too few words
-            text = ""
-            for page in doc:
-                # Try extracting blocks which can preserve more structure
-                blocks = page.get_text("blocks")
-                blocks.sort(key=lambda b: (b[1], b[0]))  # Sort by y, then x
-                for block in blocks:
-                    text += block[4] + "\n"
-    
-    # Clean up the extracted text
-    text = text.replace('\u2022', '- ')  # Replace bullet points
-    text = re.sub(r'\n{3,}', '\n\n', text)  # Remove excessive newlines
-    
-    return text.strip()
-
-def extract_text_from_image_or_scanned_pdf(file_path):
-    """Improved extraction from images or scanned PDFs"""
-    images = []
-    if file_path.endswith(".pdf"):
-        with fitz.open(file_path) as doc:
-            for page in doc:
-                pix = page.get_pixmap(dpi=300)
-                img_bytes = pix.tobytes("png")
-                image = Image.open(BytesIO(img_bytes))
-                images.append(image)
-    else:
-        image = Image.open(file_path)
-        images.append(image)
-
-    text = ""
-    for idx, img in enumerate(images):
-        # Provide more context about what we're looking at
-        response = vision_model.generate_content(
-            [
-                img, 
-                "This is a page from a resume. Extract ALL text content from this image, preserving all bullet points, sections, and formatting. Be thorough and don't miss any text, especially bullet points under work experience."
-            ]
-        )
-        extracted = response.text.replace('```', '').strip()
-        
-        # Add page separator for multi-page documents
-        if len(images) > 1:
-            text += f"\n--- Page {idx+1} ---\n" + extracted + "\n"
-        else:
-            text += extracted + "\n"
-            
-    return text.strip()
-
-def get_text_from_resume(file_path):
-    mime, _ = mimetypes.guess_type(file_path)
-    if mime:
-        if "pdf" in mime:
-            text = parse_pdf_text(file_path)
-            if len(text.strip()) < 100:  # Very low text — possibly scanned
-                text = extract_text_from_image_or_scanned_pdf(file_path)
-        elif "word" in mime or file_path.endswith(".docx"):
-            text = parse_docx(file_path)
-        elif mime.startswith("image/"):
-            text = extract_text_from_image_or_scanned_pdf(file_path)
-        else:
-            raise ValueError("Unsupported file type.")
-    else:
-        raise ValueError("Unable to determine file type.")
-    return text.strip()
-
-def structure_resume_text_to_json(resume_text):
-    """Enhanced parsing that ensures all sections are properly identified"""
-    prompt = f"""
-You are an expert resume parser. Extract ALL information from the following resume text into a comprehensive structured JSON.
-
-Resume Text:
-\"\"\"
-{resume_text}
-\"\"\"
-
-The JSON MUST include ALL of these sections, even if empty:
-- personal_info (name, contact, email, phone, location, linkedin, etc.)
-- summary (professional summary or objective if present)
-- experience (work history with company, role, dates, and ALL bullet points)
-- education (degrees, schools, dates, GPA if mentioned)
-- skills (technical and soft skills)
-- projects (with descriptions and technologies used)
-- certifications (if any)
-- achievements (awards, recognitions, etc.)
-- languages (if any)
-- publications (if any)
-- volunteer_experience (if any)
-- additional_info (anything else noteworthy)
-
-For experience and projects, capture EVERY bullet point mentioned. Do not summarize or omit any points.
-
-For each job in experience section, include:
-- company: The company name
-- title: Job title
-- dates: Employment dates
-- location: Work location if mentioned
-- bullets: ARRAY of ALL bullet points exactly as they appear in the resume
-
-Return ONLY valid JSON with no explanations. Format properly with clear organization.
-"""
-
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    response = model.generate_content(
-        prompt,
-        generation_config={
-            "temperature": 0.2,  # Lower temperature for more precise extraction
-            "max_output_tokens": 8192,  # Ensure enough tokens for complete output
-        }
-    )
-    
-    # Clean the response
-    cleaned = response.text.strip()
-    if cleaned.startswith('```json'):
-        cleaned = cleaned[len('```json'):].strip()
-    if cleaned.startswith('```'):
-        cleaned = cleaned[len('```'):].strip()
-    if cleaned.endswith('```'):
-        cleaned = cleaned[:-3].strip()
-    
-    try:
-        # Try to parse the JSON
-        parsed_json = json.loads(cleaned)
-        return parsed_json
-    except json.JSONDecodeError:
-        # If JSON is invalid, try to fix common formatting issues
-        try:
-            # Remove line breaks within strings
-            cleaned = re.sub(r'(?<=": ").*?(?="(,|\n|}))', lambda m: m.group(0).replace('\n', ' '), cleaned)
-            return json.loads(cleaned)
-        except:
-            # If still failing, try another parsing approach
-            fallback_prompt = f"""
-Parse the following resume text into a clean JSON format with these sections:
-personal_info, summary, experience, education, skills, projects, certifications, achievements.
-Keep it simple and ensure valid JSON format. Include ALL bullet points under experience.
-
-Resume:
-\"\"\"
-{resume_text}
-\"\"\"
-"""
-            fallback_response = model.generate_content(fallback_prompt)
-            cleaned_fallback = fallback_response.text.strip()
-            if cleaned_fallback.startswith('```json'):
-                cleaned_fallback = cleaned_fallback[len('```json'):].strip()
-            if cleaned_fallback.startswith('```'):
-                cleaned_fallback = cleaned_fallback[len('```'):].strip()
-            if cleaned_fallback.endswith('```'):
-                cleaned_fallback = cleaned_fallback[:-3].strip()
-                
-            return json.loads(cleaned_fallback)
-
-def parse_resume(file_path):
-    """Enhanced resume parsing with better error handling and text extraction"""
-    try:
-        raw_text = get_text_from_resume(file_path)
-        
-        # Check if we have enough text to analyze
-        if len(raw_text.strip()) < 100:
-            return {
-                "error": "Insufficient text extracted from resume. Please try a different file format."
-            }, raw_text
-            
-        # Use enhanced structured JSON parsing
-        structured_json = structure_resume_text_to_json(raw_text)
-        
-        # Verify we have the key sections
-        required_sections = ["experience", "education", "skills"]
-        missing_sections = [section for section in required_sections if section not in structured_json]
-        
-        if missing_sections:
-            # If key sections are missing, try re-parsing with a simpler approach
-            print(f"Missing sections: {missing_sections}. Retrying with simplified parsing...")
-            simplified_prompt = f"""
-            Parse this resume text into a structured JSON with ONLY these sections:
-            experience, education, skills, projects, certifications, achievements.
-            For experience, include ALL job entries with their bullet points.
-            
-            Resume text:
-            \"\"\"
-            {raw_text}
-            \"\"\"
-            """
-            model = genai.GenerativeModel("gemini-2.0-flash")
-            response = model.generate_content(simplified_prompt)
-            cleaned = response.text.strip()
-            if cleaned.startswith('```json'):
-                cleaned = cleaned[len('```json'):].strip()
-            if cleaned.startswith('```'):
-                cleaned = cleaned[len('```'):].strip()
-            if cleaned.endswith('```'):
-                cleaned = cleaned[:-3].strip()
-                
-            try:
-                structured_json = json.loads(cleaned)
-            except:
-                # If still failing, create a minimal structure
-                structured_json = {
-                    "experience": extract_section_from_text(raw_text, "experience"),
-                    "education": extract_section_from_text(raw_text, "education"),
-                    "skills": extract_section_from_text(raw_text, "skills")
-                }
-        
-        return structured_json, raw_text
-        
-    except Exception as e:
-        print(f"Error parsing resume: {str(e)}")
-        traceback.print_exc()
-        return {
-            "error": f"Failed to parse resume: {str(e)}"
-        }, ""
-
-def extract_section_from_text(text, section_name):
-    """Extract a specific section from raw text as fallback"""
-    prompt = f"""
-    From this resume text, extract ONLY the {section_name.upper()} section.
-    Return it as a JSON array of items in this section.
-    
-    Resume text:
-    \"\"\"
-    {text}
-    \"\"\"
-    
-    Return ONLY valid JSON, no explanations or markdown.
-    """
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    response = model.generate_content(prompt)
-    cleaned = response.text.strip()
-    
-    try:
-        # Try to parse as JSON array
-        if cleaned.startswith('[') and cleaned.endswith(']'):
-            return json.loads(cleaned)
-        
-        # Try to parse as JSON object (some models might return an object)
-        if cleaned.startswith('{') and cleaned.endswith('}'):
-            return json.loads(cleaned)
-            
-        # If it starts with code blocks, clean them
-        if cleaned.startswith('```json'):
-            cleaned = cleaned[len('```json'):].strip()
-        if cleaned.startswith('```'):
-            cleaned = cleaned[len('```'):].strip()
-        if cleaned.endswith('```'):
-            cleaned = cleaned[:-3].strip()
-            
-        # Try parsing again after cleaning
-        if cleaned.startswith('[') and cleaned.endswith(']'):
-            return json.loads(cleaned)
-            
-        # Last resort: return as plain text
-        return [cleaned]
-    except:
-        # Return the text as a single item if parsing fails
-        return [f"Could not parse {section_name} section"]
-
-@app.post("/analyze-resume")
-async def analyze_resume(
-    background_tasks: BackgroundTasks,
-    resume_file: UploadFile = File(...),
-    job_description: str = Form(None)
-):
-    """
-    Endpoint to upload and analyze a resume
-    Returns an analysis ID for fetching results when analysis is complete
-    """
-    # Check file type
-    allowed_extensions = ['.pdf', '.docx', '.doc', '.jpg', '.jpeg', '.png']
-    file_ext = os.path.splitext(resume_file.filename)[1].lower()
-    
-    if file_ext not in allowed_extensions:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Invalid file format. Supported formats: {', '.join(allowed_extensions)}"
-        )
-    
-    # Generate unique ID for this analysis
-    analysis_id = str(uuid.uuid4())
-    
-    # Save uploaded file temporarily
-    with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as temp_file:
-        temp_file_path = temp_file.name
-        file_content = await resume_file.read()
-        temp_file.write(file_content)
-    
-    # Store initial status
-    analysis_results[analysis_id] = {
-        "status": "processing",
-        "filename": resume_file.filename,
-        "parsed_resume": None,
-        "analysis": None
-    }
-    
-    # Process file in background
-    background_tasks.add_task(
-        process_resume, 
-        temp_file_path, 
-        analysis_id, 
-        resume_file.filename,
-        job_description
-    )
-    
-    return {
-        "status": "processing",
-        "analysis_id": analysis_id,
-        "message": "Resume uploaded and being processed. Check status with the analysis_id."
-    }
-
-async def process_resume(file_path, analysis_id, filename, job_description):
-    """Background task to process resume"""
-    try:
-        # Parse resume using our parser
-        structured_data, raw_text = parse_resume(file_path)
-        
-        # Format the parsed data to match the expected structure for the analyzer
-        parsed_resume = {
-            "raw_content": raw_text,
-            "metadata": {
-                "filename": filename,
-                "parser": "gemini"
-            },
-            "sections": structured_data
-        }
-        
-        if not parsed_resume:
-            analysis_results[analysis_id] = {
-                "status": "error",
-                "filename": filename,
-                "error": "Failed to parse resume"
-            }
-            return
-        
-        # Analyze resume
-        analysis_result = analyzer.analyze_full_resume(parsed_resume, job_description)
-        
-        # Store result
-        analysis_results[analysis_id] = {
-            "status": "completed",
-            "filename": filename,
-            "parsed_resume": parsed_resume,
-            "analysis": analysis_result
-        }
-    except Exception as e:
-        analysis_results[analysis_id] = {
-            "status": "error",
-            "filename": filename,
-            "error": str(e)
-        }
-    finally:
-        # Clean up temporary file
-        try:
-            os.unlink(file_path)
-        except:
-            pass
-
-@app.get("/analysis/{analysis_id}")
-async def get_analysis_result(analysis_id: str):
-    """Fetch the result of a resume analysis by ID"""
-    if analysis_id not in analysis_results:
-        raise HTTPException(status_code=404, detail="Analysis not found")
-    
-    return analysis_results[analysis_id]
-
-@app.delete("/analysis/{analysis_id}")
-async def delete_analysis(analysis_id: str):
-    """Delete an analysis result"""
-    if analysis_id not in analysis_results:
-        raise HTTPException(status_code=404, detail="Analysis not found")
-    
-    del analysis_results[analysis_id]
-    return {"message": "Analysis deleted successfully"}
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy"}
-
-if __name__ == "__main__":
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
-
-
-    import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { 
   Box, Container, AppBar, Toolbar, Typography, Button, 
   IconButton, CssBaseline, ThemeProvider, createTheme,
@@ -455,14 +9,18 @@ import {
 import {
   DarkMode, LightMode, Menu, FileUploadOutlined, 
   DescriptionOutlined, AnalyticsOutlined, Dashboard as DashboardIcon,
-  Person, Settings, Help, CloudUpload, ArrowForward,
+  Person, Settings, Help as HelpIcon, CloudUpload, ArrowForward,
   TipsAndUpdates, CheckCircleOutline, SecurityOutlined
 } from '@mui/icons-material';
 import { styled } from '@mui/system';
+// Import components
+import Dashboard from './components/pages/Dashboard';
+import Analytics from './components/pages/Analytics';
+import Templates from './components/pages/Templates';
+import HelpPage from './components/pages/Help'; // Renamed to HelpPage to avoid conflict
 import DashboardComponent from './components/Dashboard';
 import ResumeUploader from './components/upload/ResumeUploader';
 import JobDescriptionInput from './components/upload/JobDescriptionInput';
-import companyLogo from './assets/logo.png.webp'; // Add your logo file to assets folder
 
 // Create theme with light/dark mode support
 const getTheme = (mode) => createTheme({
@@ -572,7 +130,7 @@ const getTheme = (mode) => createTheme({
   },
 });
 
-// Styled components
+// Styled components for textured background similar to Enhancv
 const GradientBackground = styled('div')(({ theme }) => ({
   position: 'fixed',
   top: 0,
@@ -580,19 +138,45 @@ const GradientBackground = styled('div')(({ theme }) => ({
   right: 0,
   bottom: 0,
   backgroundImage: theme.palette.mode === 'light'
-    ? 'linear-gradient(135deg, #E0F7FA 0%, #E8F5E9 50%, #E3F2FD 100%)'
+    ? 'linear-gradient(135deg, #eef9ff 0%, #EDF7FF 50%, #e5effa 100%)'
     : 'linear-gradient(135deg, #1a2980 0%, #26d0ce 100%)',
-  opacity: theme.palette.mode === 'light' ? 0.4 : 0.2,
+  opacity: 1,
+  zIndex: -3,
+}));
+
+// Add a subtle blur gradient overlay
+const BlurOverlay = styled('div')(({ theme }) => ({
+  position: 'fixed',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundImage: theme.palette.mode === 'light'
+    ? 'radial-gradient(circle at 25% 25%, rgba(200, 240, 255, 0.5) 0%, rgba(255, 255, 255, 0) 50%), radial-gradient(circle at 75% 75%, rgba(220, 245, 235, 0.4) 0%, rgba(255, 255, 255, 0) 50%)'
+    : 'radial-gradient(circle at 25% 25%, rgba(41, 128, 185, 0.3) 0%, rgba(0, 0, 0, 0) 50%), radial-gradient(circle at 75% 75%, rgba(39, 174, 96, 0.3) 0%, rgba(0, 0, 0, 0) 50%)',
+  opacity: 0.8,
+  zIndex: -2,
+}));
+
+// Add a subtle noise texture overlay
+const TextureOverlay = styled('div')(({ theme }) => ({
+  position: 'fixed',
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4' viewBox='0 0 4 4'%3E%3Cpath fill='%23${theme.palette.mode === 'light' ? '3498db' : '3498db'}' fill-opacity='0.03' d='M1 3h1v1H1V3zm2-2h1v1H3V1z'%3E%3C/path%3E%3C/svg%3E")`,
   zIndex: -1,
 }));
 
+// Add a subtle pattern overlay
 const PatternOverlay = styled('div')(({ theme }) => ({
   position: 'fixed',
   top: 0,
   left: 0,
   right: 0,
   bottom: 0,
-  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Cg fill-rule='evenodd'%3E%3Cg fill='%23${theme.palette.mode === 'light' ? '3498db' : '3498db'}' fill-opacity='0.05'%3E%3Cpath opacity='.5' d='M96 95h4v1h-4v4h-1v-4h-9v4h-1v-4h-9v4h-1v-4h-9v4h-1v-4h-9v4h-1v-4h-9v4h-1v-4h-9v4h-1v-4h-9v4h-1v-4h-9v4h-1v-4H0v-1h15v-9H0v-1h15v-9H0v-1h15v-9H0v-1h15v-9H0v-1h15v-9H0v-1h15v-9H0v-1h15v-9H0v-1h15v-9H0v-1h15V0h1v15h9V0h1v15h9V0h1v15h9V0h1v15h9V0h1v15h9V0h1v15h9V0h1v15h9V0h1v15h9V0h1v15h4v1h-4v9h4v1h-4v9h4v1h-4v9h4v1h-4v9h4v1h-4v9h4v1h-4v9h4v1h-4v9h4v1h-4v9zm-1 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-9-10h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm9-10v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-9-10h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm9-10v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-9-10h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm9-10v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-10 0v-9h-9v9h9zm-9-10h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9zm10 0h9v-9h-9v9z'/%3E%3Cpath d='M6 5V0H5v5H0v1h5v94h1V6h94V5H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
+  backgroundImage: `url("data:image/svg+xml,%3Csvg width='52' height='26' viewBox='0 0 52 26' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23${theme.palette.mode === 'light' ? '3498db' : 'ffffff'}' fill-opacity='0.02'%3E%3Cpath d='M10 10c0-2.21-1.79-4-4-4-3.314 0-6-2.686-6-6h2c0 2.21 1.79 4 4 4 3.314 0 6 2.686 6 6 0 2.21 1.79 4 4 4 3.314 0 6 2.686 6 6 0 2.21 1.79 4 4 4v2c-3.314 0-6-2.686-6-6 0-2.21-1.79-4-4-4-3.314 0-6-2.686-6-6zm25.464-1.95l8.486 8.486-1.414 1.414-8.486-8.486 1.414-1.414z' /%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
   opacity: 0.5,
   zIndex: -1,
 }));
@@ -681,14 +265,12 @@ const App = () => {
   const [activePage, setActivePage] = useState('dashboard');
   
   const theme = getTheme(themeMode);
-  
   // Move useMediaQuery AFTER theme is defined
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const toggleTheme = () => {
     setThemeMode(themeMode === 'light' ? 'dark' : 'light');
   };
-
 
   const toggleDrawer = () => {
     setDrawerOpen(!drawerOpen);
@@ -789,12 +371,14 @@ const App = () => {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       
-      {/* Background with gradient and pattern */}
+      {/* Enhanced background with multiple layers for texture */}
       <GradientBackground />
+      <BlurOverlay />
+      <TextureOverlay />
       <PatternOverlay />
       
       <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-        {/* Enhanced Header with gradient background */}
+        {/* Enhanced Header with company name image */}
         <AppBar 
           position="static" 
           elevation={0} // Remove default shadow
@@ -804,92 +388,92 @@ const App = () => {
             borderColor: 'rgba(255,255,255,0.1)',
           }}
         >
-         
-         <Toolbar sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: { xs: 1, sm: 2 } }}>
-  {/* Left side with menu button and company name */}
-  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-    <IconButton
-      color="inherit"
-      edge="start"
-      onClick={toggleDrawer}
-      sx={{ mr: 1 }}
-    >
-      <Menu />
-    </IconButton>
-    
-    {/* Company Name as Image */}
-    <Box 
-      component="img"
-      src="Logo.e146679f85661cb6869b.webp" // Make sure to add this image file to your public folder
-      alt="Logo.e146679f85661cb6869b.webp"
-      sx={{ 
-        height: 28, 
-        mr: 1,
-        display: 'block'
-      }}
-    />
-  </Box>
-  
-  {/* Centered Resume AI Analyzer Text */}
-  <Typography 
-    variant="h6" 
-    component="div" 
-    sx={{ 
-      fontWeight: 700,
-      background: 'linear-gradient(to right, #ffffff, #ecf0f1)',
-      WebkitBackgroundClip: 'text',
-      WebkitTextFillColor: 'transparent',
-      textShadow: '0 2px 10px rgba(0,0,0,0.2)',
-      display: { xs: 'none', sm: 'block' }, // Hide on mobile
-      position: 'absolute',
-      left: '50%',
-      transform: 'translateX(-50%)',
-      textAlign: 'center',
-      whiteSpace: 'nowrap'
-    }}
-  >
-    Resume AI Analyzer
-  </Typography>
-  
-  {/* Right side with theme toggle */}
-  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-    {activeStep === 2 && (
-      <Button 
-        color="inherit" 
-        onClick={handleReset} 
-        variant="outlined"
-        sx={{ 
-          mr: 2, 
-          borderColor: 'rgba(255,255,255,0.5)', 
-          '&:hover': { 
-            borderColor: 'white', 
-            backgroundColor: 'rgba(255,255,255,0.1)',
-            transform: 'translateY(-2px)'
-          },
-          transition: 'all 0.3s ease',
-          display: { xs: 'none', sm: 'flex' } // Hide on mobile
-        }}
-        startIcon={<FileUploadOutlined />}
-      >
-        Analyze New Resume
-      </Button>
-    )}
-    <IconButton 
-      color="inherit" 
-      onClick={toggleTheme}
-      sx={{ 
-        backdropFilter: 'blur(5px)',
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        '&:hover': {
-          backgroundColor: 'rgba(255,255,255,0.2)',
-        }
-      }}
-    >
-      {themeMode === 'dark' ? <LightMode /> : <DarkMode />}
-    </IconButton>
-  </Box>
-</Toolbar>
-          {/* Secondary navigation bar with active indicator */}
+          <Toolbar sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: { xs: 1, sm: 2 } }}>
+            {/* Left side with menu button and company name */}
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <IconButton
+                color="inherit"
+                edge="start"
+                onClick={toggleDrawer}
+                sx={{ mr: 1 }}
+              >
+                <Menu />
+              </IconButton>
+              
+              {/* Company Name as Image */}
+              <Box 
+                component="img"
+                src="Logo.e146679f85661cb6869b.webp" // Make sure this image exists in your public folder
+                alt="Logo"
+                sx={{ 
+                  height: 28, 
+                  mr: 1,
+                  display: 'block'
+                }}
+              />
+            </Box>
+            
+            {/* Centered Resume AI Analyzer Text */}
+            <Typography 
+              variant="h6" 
+              component="div" 
+              sx={{ 
+                fontWeight: 700,
+                background: 'linear-gradient(to right, #ffffff, #ecf0f1)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                textShadow: '0 2px 10px rgba(0,0,0,0.2)',
+                display: { xs: 'none', sm: 'block' }, // Hide on mobile
+                position: 'absolute',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                textAlign: 'center',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              Resume AI Analyzer
+            </Typography>
+            
+            {/* Right side with theme toggle */}
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              {activeStep === 2 && (
+                <Button 
+                  color="inherit" 
+                  onClick={handleReset} 
+                  variant="outlined"
+                  sx={{ 
+                    mr: 2, 
+                    borderColor: 'rgba(255,255,255,0.5)', 
+                    '&:hover': { 
+                      borderColor: 'white', 
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      transform: 'translateY(-2px)'
+                    },
+                    transition: 'all 0.3s ease',
+                    display: { xs: 'none', sm: 'flex' } // Hide on mobile
+                  }}
+                  startIcon={<FileUploadOutlined />}
+                >
+                  Analyze New Resume
+                </Button>
+              )}
+              <IconButton 
+                color="inherit" 
+                onClick={toggleTheme}
+                sx={{ 
+                  backdropFilter: 'blur(5px)',
+                  backgroundColor: 'rgba(255,255,255,0.1)',
+                  '&:hover': {
+                    backgroundColor: 'rgba(255,255,255,0.2)',
+                  }
+                }}
+              >
+                {themeMode === 'dark' ? <LightMode /> : <DarkMode />}
+              </IconButton>
+            </Box>
+          </Toolbar>
+
+          {/* Secondary navigation bar */}
           <Box
             sx={{
               display: { xs: 'none', md: 'flex' },
@@ -956,7 +540,7 @@ const App = () => {
             </Button>
             <Button 
               color="inherit" 
-              startIcon={<Help />} 
+              startIcon={<HelpIcon />} 
               onClick={() => handlePageChange('help')}
               sx={{ 
                 borderBottom: activePage === 'help' ? '2px solid white' : 'none',
@@ -976,7 +560,7 @@ const App = () => {
           </Box>
         </AppBar>
 
-        {/* Enhanced Sidebar with better styling */}
+        {/* Sidebar */}
         <Drawer
           variant="temporary"
           anchor="left"
@@ -1000,24 +584,21 @@ const App = () => {
             background: 'linear-gradient(135deg, #3498db 0%, #1a5276 100%)',
             color: 'white'
           }}>
-            <Avatar 
-              src={companyLogo} 
-              alt="Company Logo" 
+            {/* Company name as image */}
+            <Box 
+              component="img"
+              src="Logo.e146679f85661cb6869b.webp" // Make sure this image exists in your public folder
+              alt="Logo"
               sx={{ 
-                width: 70, 
-                height: 70,
-                bgcolor: 'white',
-                p: 0.5,
-                mb: 2,
-                boxShadow: '0 0 20px rgba(255,255,255,0.3)',
-                border: '2px solid rgba(255,255,255,0.7)'
+                width: 120,
+                mb: 2
               }}
             />
-            <Typography variant="h5" fontWeight="bold" sx={{ mb: 0.5 }}>
-              Resume AI
+            <Typography variant="h6" sx={{ mb: 1 }}>
+              Resume AI Analyzer
             </Typography>
             <Typography variant="body2" sx={{ opacity: 0.85 }}>
-              User: vanshkhandelwait
+              User: vanshkhandelwa
             </Typography>
           </Box>
           <Divider />
@@ -1175,7 +756,7 @@ const App = () => {
               }}
             >
               <ListItemIcon>
-                <Help color={activePage === 'help' ? 'primary' : 'inherit'} />
+                <HelpIcon color={activePage === 'help' ? 'primary' : 'inherit'} />
               </ListItemIcon>
               <ListItemText 
                 primary="Help & FAQ" 
@@ -1187,7 +768,7 @@ const App = () => {
           </List>
         </Drawer>
 
-        {/* Main content */}
+        {/* Main content with improved textures */}
         <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
           <Container maxWidth="lg" sx={{ mt: 4, mb: 4, flexGrow: 1 }}>
             {activeStep < 2 ? (
@@ -1299,8 +880,16 @@ const App = () => {
                   ))}
                 </Stepper>
               </GlassCard>
+            ) : activePage === 'dashboard' ? (
+              analysisResults ? <DashboardComponent analysisResults={analysisResults} /> : <Dashboard />
+            ) : activePage === 'analytics' ? (
+              <Analytics />
+            ) : activePage === 'templates' ? (
+              <Templates />
+            ) : activePage === 'help' ? (
+              <HelpPage />
             ) : (
-              analysisResults && <DashboardComponent analysisResults={analysisResults} />
+              <Dashboard />
             )}
           </Container>
 
@@ -1322,12 +911,12 @@ const App = () => {
               <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Box>
                   <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <Avatar 
-                      src={companyLogo} 
-                      alt="Company Logo" 
+                    <Box 
+                      component="img"
+                      src="Logo.e146679f85661cb6869b.webp" // Make sure this image exists in your public folder
+                      alt="Logo"
                       sx={{ 
-                        width: 24, 
-                        height: 24,
+                        height: 20, 
                         mr: 1
                       }}
                     />

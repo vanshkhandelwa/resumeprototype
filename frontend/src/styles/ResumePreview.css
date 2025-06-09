@@ -1,0 +1,154 @@
+.resume-preview {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+  }
+  
+  .resume-content {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 3rem 2rem;
+    font-family: 'Times New Roman', Times, serif;
+  }
+  
+  .resume-section {
+    margin-bottom: 2rem;
+  }
+  
+  .section-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #2c3e50;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #dee2e6;
+    padding-bottom: 0.5rem;
+  }
+  
+  .personal-info {
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+  
+  .resume-name {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    color: #2c3e50;
+  }
+  
+  .contact-info {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 1rem;
+    color: #495057;
+  }
+  
+  .summary-content {
+    color: #495057;
+    font-style: italic;
+  }
+  
+  .experience-section,
+  .education-section {
+    margin-bottom: 1.5rem;
+  }
+  
+  .job-entry,
+  .education-entry {
+    margin-bottom: 1.5rem;
+  }
+  
+  .job-header {
+    margin-bottom: 0.75rem;
+  }
+  
+  .job-title,
+  .degree {
+    font-weight: 700;
+    margin-bottom: 0;
+    font-size: 1.1rem;
+    color: #2c3e50;
+  }
+  
+  .company-name,
+  .institution {
+    font-weight: 500;
+    color: #495057;
+  }
+  
+  .job-dates,
+  .edu-dates,
+  .job-location {
+    color: #6c757d;
+    font-size: 0.9rem;
+  }
+  
+  .job-bullets {
+    padding-left: 1.5rem;
+  }
+  
+  .job-bullets li {
+    margin-bottom: 0.5rem;
+    color: #495057;
+  }
+  
+  .skills-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  
+  .skill-tag {
+    background-color: #f0f4f8;
+    border: 1px solid #d8e1e8;
+    border-radius: 4px;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.9rem;
+    color: #495057;
+  }
+  
+  .generic-list {
+    padding-left: 1.5rem;
+  }
+  
+  .generic-list li {
+    margin-bottom: 0.5rem;
+    color: #495057;
+  }
+  
+  .generic-content p {
+    color: #495057;
+  }
+  
+  .resume-json {
+    background-color: #f8f9fa;
+    padding: 1rem;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    color: #495057;
+  }
+  
+  .resume-preview.empty {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #6c757d;
+  }
+  
+  @media (max-width: 768px) {
+    .resume-content {
+      padding: 2rem 1rem;
+    }
+    
+    .contact-info {
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .skill-tag {
+      font-size: 0.8rem;
+    }
+  }

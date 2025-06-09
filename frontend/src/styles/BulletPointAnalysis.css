@@ -1,0 +1,136 @@
+.bullet-point-analysis {
+    padding-bottom: 2rem;
+  }
+  
+  .bullet-intro {
+    margin-bottom: 2rem;
+    color: #495057;
+  }
+  
+  .bullet-item {
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+  }
+  
+  .bullet-header {
+    padding: 1rem 1.5rem;
+    background-color: #e9ecef;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .bullet-strength-indicator {
+    display: flex;
+    align-items: center;
+  }
+  
+  .strength-badge {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: #3498db;
+    color: white;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: 700;
+    margin-right: 1rem;
+  }
+  
+  .strength-label {
+    font-weight: 500;
+  }
+  
+  .bullet-content {
+    padding: 1.5rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+  }
+  
+  .original-bullet, .improved-bullet {
+    position: relative;
+  }
+  
+  .original-bullet {
+    border-right: 1px solid #dee2e6;
+  }
+  
+  .original-bullet h4, .improved-bullet h4 {
+    margin-bottom: 1rem;
+    font-size: 1rem;
+  }
+  
+  .original-bullet p, .improved-bullet p {
+    color: #495057;
+    line-height: 1.6;
+  }
+  
+  .improved-bullet h4 {
+    color: #2ecc71;
+  }
+  
+  .bullet-feedback {
+    padding: 1.5rem;
+    border-top: 1px solid #dee2e6;
+    background-color: #f1f8e9;
+  }
+  
+  .bullet-feedback h4 {
+    margin-bottom: 0.75rem;
+    font-size: 1rem;
+    color: #2c3e50;
+  }
+  
+  .bullet-feedback p {
+    color: #495057;
+  }
+  
+  .bullet-writing-tips {
+    margin-top: 3rem;
+    background-color: #e8f4fd;
+    border-radius: 8px;
+    padding: 1.5rem;
+  }
+  
+  .bullet-writing-tips h3 {
+    margin-bottom: 1rem;
+    color: #2980b9;
+  }
+  
+  .bullet-writing-tips ul {
+    list-style-position: inside;
+    padding-left: 0;
+  }
+  
+  .bullet-writing-tips li {
+    margin-bottom: 0.75rem;
+    color: #495057;
+  }
+  
+  .bullet-point-analysis.empty {
+    text-align: center;
+    padding: 3rem 1rem;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    color: #6c757d;
+  }
+  
+  @media (max-width: 768px) {
+    .bullet-content {
+      grid-template-columns: 1fr;
+    }
+    
+    .original-bullet {
+      border-right: none;
+      border-bottom: 1px solid #dee2e6;
+      padding-bottom: 1.5rem;
+    }
+    
+    .improved-bullet {
+      padding-top: 1.5rem;
+    }
+  }

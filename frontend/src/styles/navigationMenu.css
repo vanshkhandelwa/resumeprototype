@@ -1,0 +1,29 @@
+.navigation-menu {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 30px;
+}
+
+.navigation-menu button {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 12px 20px;
+  font-size: 15px;
+  color: var(--dark-gray);
+  cursor: pointer;
+  transition: var(--transition);
+  border-left: 3px solid transparent;
+}
+
+.navigation-menu button:hover {
+  background-color: var(--light-gray);
+  color: var(--primary-color);
+}
+
+.navigation-menu button.active {
+  background-color: var(--primary-light);
+  color: var(--primary-color);
+  border-left-color: var(--primary-color);
+  font-weight: 500;
+}

@@ -1,0 +1,92 @@
+.app-header {
+  background-color: white;
+  padding: 1rem 0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  position: relative; /* Added for absolute positioning */
+}
+
+.app-header .container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative; /* Added for absolute positioning */
+}
+
+.logo {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #2c3e50;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+}
+
+.unstop-logo {
+  height: 40px;
+  display: flex;
+  align-items: center;
+}
+
+.unstop-logo-img {
+  height: 100%;
+  width: auto;
+}
+
+/* New centered app name styling */
+.app-name {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #2c3e50;
+}
+
+.logo:hover {
+  color: #3498db;
+}
+
+.nav-menu {
+  z-index: 1; /* Ensure nav stays above the centered title */
+}
+
+.nav-menu ul {
+  list-style: none;
+  display: flex;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-menu li {
+  margin-left: 1.5rem;
+}
+
+.nav-menu a {
+  color: #2c3e50;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.nav-menu a:hover {
+  color: #3498db;
+}
+
+@media (max-width: 768px) {
+  .logo {
+    font-size: 1.25rem;
+  }
+  
+  .nav-menu li {
+    margin-left: 1rem;
+  }
+  
+  .unstop-logo {
+    height: 30px;
+  }
+  
+  /* Adjust centered text on mobile */
+  .app-name {
+    font-size: 1.2rem;
+  }
+}

@@ -1,0 +1,140 @@
+.section-analysis {
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+
+.section-header {
+  padding: 1rem 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.section-header:hover {
+  background-color: #e9ecef;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+}
+
+.section-title h3 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.section-score {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: #3498db;
+  color: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 1rem;
+  font-weight: 700;
+  margin-left: 1rem;
+}
+
+.expand-icon {
+  color: #6c757d;
+  font-size: 1rem;
+}
+
+.section-details {
+  padding: 1.5rem;
+  border-top: 1px solid #dee2e6;
+  animation: slideDown 0.3s ease-out;
+}
+
+.strengths-weaknesses {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.strengths h4 {
+  color: #2ecc71;
+  margin-bottom: 1rem;
+}
+
+.weaknesses h4 {
+  color: #e74c3c;
+  margin-bottom: 1rem;
+}
+
+.strengths ul, .weaknesses ul {
+  list-style-position: inside;
+  padding-left: 0;
+}
+
+.strengths ul li, .weaknesses ul li {
+  margin-bottom: 0.5rem;
+}
+
+.improvement-suggestions h4 {
+  color: #3498db;
+  margin-bottom: 1rem;
+}
+
+.improvement-suggestions ul {
+  list-style-position: inside;
+  padding-left: 0;
+}
+
+.improvement-suggestions ul li {
+  margin-bottom: 0.5rem;
+}
+
+.additional-metrics {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #dee2e6;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+.metric {
+  display: flex;
+  align-items: center;
+}
+
+.metric-label {
+  margin-right: 0.5rem;
+  font-weight: 500;
+}
+
+.metric-value {
+  font-weight: 700;
+  color: #3498db;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 768px) {
+  .strengths-weaknesses {
+    grid-template-columns: 1fr;
+  }
+  
+  .additional-metrics {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+}
