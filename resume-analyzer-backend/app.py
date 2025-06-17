@@ -678,6 +678,19 @@ async def analyze_demo():
             }
         }
     })
+    from flask import Flask, send_from_directory
+import os
+
+app = Flask(__name__, static_folder='../frontend/build', static_url_path='/')
+
+# Serve React build files
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_react(path):
+    if path != "" and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    else:
+        return send_from_directory(app.static_folder, 'index.html')
 @app.post("/analyze")
 async def legacy_analyze_endpoint(
     resume: UploadFile = File(...),
