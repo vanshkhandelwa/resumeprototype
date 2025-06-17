@@ -678,7 +678,7 @@ async def analyze_demo():
             }
         }
     })
-    from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory
 import os
 
 app = Flask(__name__, static_folder='../frontend/build', static_url_path='/')
